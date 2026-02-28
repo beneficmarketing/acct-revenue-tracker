@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACCT Revenue Tracker 2026</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #f0f0f0; min-height: 100vh; padding: 20px; }
+  h1 { font-size: 1.2rem; font-weight: 700; color: #EECC00; margin-bottom: 4px; }
+  .subtitle { font-size: 0.8rem; color: #888; margin-bottom: 20px; }
+  .summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+  .stat { background: #1a1a1a; border-radius: 10px; padding: 14px; text-align: center; }
+  .stat-value { font-size: 1.3rem; font-weight: 700; color: #EECC00; }
+  .stat-label { font-size: 0.7rem; color: #888; margin-top: 4px; }
+  .month-card { background: #1a1a1a; border-radius: 10px; padding: 14px; margin-bottom: 10px; border-left: 3px solid #333; }
+  .month-card.current { border-left-color: #EECC00; }
+  .month-card.hit { border-left-color: #22c55e; }
+  .month-card.missed { border-left-color: #ef4444; }
+  .month-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .month-name { font-weight: 600; font-size: 0.95rem; }
+  .month-name.current { color: #EECC00; }
+  .targets { font-size: 0.75rem; color: #888; }
+  .progress-bar { height: 6px; background: #333; border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+  .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+  .progress-fill.hit { background: #22c55e; }
+  .progress-fill.on-track { background: #EECC00; }
+  .progress-fill.behind { background: #ef4444; }
+  .actual-row { display: flex; align-items: center; gap: 8px; }
+  .actual-label { font-size: 0.75rem; color: #888; white-space: nowrap; }
+  .actual-input { background: #2a2a2a; border: 1px solid #444; border-radius: 6px; color: #f0f0f0; font-size: 0.85rem; padding: 4px 8px; width: 100%; max-width: 120px; }
+  .actual-input:focus { outline: none; border-color: #EECC00; }
+  .pct { font-size: 0.75rem; font-weight: 600; min-width: 40px; text-align: right; }
+  .pct.hit { color: #22c55e; }
+  .pct.on-track { color: #EECC00; }
+  .pct.behind { color: #ef4444; }
+  .section-title { font-size: 0.75rem; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; margin-top: 8px; }
+  .annual-bar-wrap { background: #1a1a1a; border-radius: 10px; padding: 16px; margin-bottom: 24px; }
+  .annual-bar { height: 10px; background: #333; border-radius: 5px; overflow: hidden; margin: 10px 0; }
+  .annual-fill { height: 100%; background: linear-gradient(90deg, #EECC00, #f5d000); border-radius: 5px; transition: width 0.5s ease; }
+  .annual-labels { display: flex; justify-content: space-between; font-size: 0.75rem; color: #888; }
+  .annual-labels span { color: #EECC00; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>ACCT Revenue 2026</h1>
+<p class="subtitle">ActionCOACH Central Texas · Updated live</p>
+
+<div class="summary">
+  <div class="stat">
+    <div class="stat-value" id="ytd-actual">$0</div>
+    <div class="stat-label">YTD Actual</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" id="ytd-target">$0</div>
+    <div class="stat-label">YTD Target</div>
+  </div>
+  <div class="stat">
+    <div class="stat-value" id="ytd-pct">0%</div>
+    <div class="stat-label">To Target</div>
+  </div>
+</div>
+
+<div class="annual-bar-wrap">
+  <div class="annual-labels">
+    <span id="annual-actual-label">$0 actual</span>
+    <span>$1.41M goal</span>
+  </div>
+  <div class="annual-bar"><div class="annual-fill" id="annual-fill" style="width:0%"></div></div>
+  <div class="annual-labels">
+    <span id="annual-pct-label" style="color:#888">0% of annual goal</span>
+  </div>
+</div>
+
+<div class="section-title">Monthly Breakdown</div>
+<div id="months"></div>
+
+<script>
+const TARGETS = [63000,78000,83000,95000,101000,108000,119000,128000,138000,153000,164000,174000];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const ANNUAL_GOAL = 1410000;
+const NOW = new Date();
+const CURRENT_MONTH = NOW.getMonth(); // 0-indexed
+
+function fmt(n) {
+  if (n >= 1000000) return '$' + (n/1000000).toFixed(2) + 'M';
+  if (n >= 1000) return '$' + Math.round(n/1000) + 'K';
+  return '$' + n;
+}
+
+function loadActuals() {
+  try { return JSON.parse(localStorage.getItem('acct_actuals') || '{}'); } catch(e) { return {}; }
+}
+
+function saveActual(i, val) {
+  const a = loadActuals();
+  if (val === '' || val === null) delete a[i];
+  else a[i] = val;
+  localStorage.setItem('acct_actuals', JSON.stringify(a));
+  render();
+}
+
+function render() {
+  const actuals = loadActuals();
+  let ytdActual = 0, ytdTarget = 0, annualActual = 0;
+
+  for (let i = 0; i <= CURRENT_MONTH; i++) {
+    ytdTarget += TARGETS[i];
+    if (actuals[i]) ytdActual += parseFloat(actuals[i]) || 0;
+    if (actuals[i]) annualActual += parseFloat(actuals[i]) || 0;
+  }
+  for (let i = CURRENT_MONTH + 1; i < 12; i++) {
+    if (actuals[i]) annualActual += parseFloat(actuals[i]) || 0;
+  }
+
+  document.getElementById('ytd-actual').textContent = fmt(ytdActual);
+  document.getElementById('ytd-target').textContent = fmt(ytdTarget);
+  const pct = ytdTarget > 0 ? Math.round(ytdActual / ytdTarget * 100) : 0;
+  const pctEl = document.getElementById('ytd-pct');
+  pctEl.textContent = pct + '%';
+  pctEl.style.color = pct >= 100 ? '#22c55e' : pct >= 80 ? '#EECC00' : '#ef4444';
+
+  const annPct = Math.min(100, Math.round(annualActual / ANNUAL_GOAL * 100));
+  document.getElementById('annual-actual-label').textContent = fmt(annualActual) + ' actual';
+  document.getElementById('annual-fill').style.width = annPct + '%';
+  document.getElementById('annual-pct-label').textContent = annPct + '% of annual goal';
+
+  const container = document.getElementById('months');
+  container.innerHTML = '';
+
+  MONTHS.forEach((month, i) => {
+    const target = TARGETS[i];
+    const actual = actuals[i] ? parseFloat(actuals[i]) : null;
+    const isCurrent = i === CURRENT_MONTH;
+    const isPast = i < CURRENT_MONTH;
+    const pctNum = actual !== null ? Math.round(actual / target * 100) : null;
+    const hit = actual !== null && actual >= target;
+    const missed = actual !== null && !hit && isPast;
+
+    const card = document.createElement('div');
+    card.className = 'month-card' + (isCurrent ? ' current' : hit ? ' hit' : missed ? ' missed' : '');
+
+    const barPct = actual !== null ? Math.min(100, Math.round(actual / target * 100)) : 0;
+    const barClass = hit ? 'hit' : (barPct >= 80 ? 'on-track' : 'behind');
+    const pctClass = hit ? 'hit' : (pctNum !== null && pctNum >= 80 ? 'on-track' : 'behind');
+
+    card.innerHTML = `
+      <div class="month-header">
+        <span class="month-name${isCurrent ? ' current' : ''}">${month}${isCurrent ? ' ← now' : ''}</span>
+        <span class="targets">Target: ${fmt(target)}</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill ${barClass}" style="width:${barPct}%"></div>
+      </div>
+      <div class="actual-row">
+        <span class="actual-label">Actual:</span>
+        <input class="actual-input" type="number" placeholder="e.g. 65000"
+          value="${actual !== null ? actual : ''}"
+          data-month="${i}"
+          inputmode="numeric" />
+        ${pctNum !== null ? `<span class="pct ${pctClass}">${pctNum}%</span>` : '<span class="pct" style="color:#555">—</span>'}
+      </div>`;
+
+    container.appendChild(card);
+  });
+
+  document.querySelectorAll('.actual-input').forEach(input => {
+    input.addEventListener('change', e => {
+      const val = e.target.value.trim();
+      saveActual(parseInt(e.target.dataset.month), val === '' ? null : parseFloat(val));
+    });
+  });
+}
+
+render();
+</script>
+</body>
+</html>
